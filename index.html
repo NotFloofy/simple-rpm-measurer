@@ -15,24 +15,20 @@
       align-items: center;
       padding: 10px;
     }
-
     #videoWrapper {
       position: relative;
       margin-top: 10px;
     }
-
     video {
       border-radius: 12px;
       max-width: 100vw;
       max-height: 60vh;
     }
-
     canvas {
       position: absolute;
       top: 0;
       left: 0;
     }
-
     .crosshair {
       position: absolute;
       top: 50%;
@@ -44,13 +40,11 @@
       transform: translate(-50%, -50%);
       z-index: 10;
     }
-
     #rpmReadout {
       font-size: 20px;
       color: #66ccff;
       margin: 10px;
     }
-
     #debug {
       background: #111122;
       color: #99ccff;
@@ -63,7 +57,6 @@
       overflow-y: auto;
       max-height: 200px;
     }
-
     button {
       background: #1e90ff;
       color: white;
@@ -75,30 +68,29 @@
       cursor: pointer;
       transition: background 0.3s ease;
     }
-
     button:hover {
       background: #3399ff;
     }
   </style>
 </head>
 <body>
-  <div id="rpmReadout">waiting for cam nya~</div>
+  <div id="rpmReadout">click start to enable camera nya~</div>
   <div id="videoWrapper">
     <video id="vid" autoplay muted playsinline></video>
     <canvas id="canv"></canvas>
     <div class="crosshair"></div>
   </div>
-  <button onclick="startAnalyzing()">start scan</button>
-  <button onclick="getCamera(true)">retry camera</button>
+  <button id="startBtn">start scan</button>
+  <button id="retryBtn">retry camera</button>
   <div id="debug">debug info will show here nya~</div>
-
   <script>
-    const vid = document.getElementById('vid')
-    const canv = document.getElementById('canv')
-    const ctx = canv.getContext('2d')
-    const readout = document.getElementById('rpmReadout')
-    const debug = document.getElementById('debug')
-
+    const vid = document.getElementById("vid")
+    const canv = document.getElementById("canv")
+    const ctx = canv.getContext("2d")
+    const readout = document.getElementById("rpmReadout")
+    const debug = document.getElementById("debug")
+    const startBtn = document.getElementById("startBtn")
+    const retryBtn = document.getElementById("retryBtn")
     let lastBrightness = null
     let lastTime = null
     let intervals = []
@@ -109,79 +101,70 @@
     let ticks = 0
     let lastRpm = 0
 
-    async function getCamera(forcePrompt = false) {
+    async function getCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
         vid.srcObject = stream
-        vid.onloadedmetadata = () => {
-          canv.width = vid.videoWidth
-          canv.height = vid.videoHeight
-          readout.innerText = 'camera ready nya~'
-        }
+        await vid.play()
+        canv.width = vid.videoWidth
+        canv.height = vid.videoHeight
+        readout.innerText = "camera enabled nya~"
+        return true
       } catch (e) {
-        if (forcePrompt) alert('click allow cam access nya~ or check browser settings')
-        console.error(e)
-        readout.innerText = 'failed to get camera nya~'
+        readout.innerText = "camera access denied nya~"
+        return false
       }
     }
 
     function getCenterZoneBrightness(size = 5) {
-      let x = Math.floor(canv.width / 2 - size / 2)
-      let y = Math.floor(canv.height / 2 - size / 2)
-      let frame = ctx.getImageData(x, y, size, size)
+      const x = Math.floor(canv.width / 2 - size / 2)
+      const y = Math.floor(canv.height / 2 - size / 2)
+      const frame = ctx.getImageData(x, y, size, size)
       let brightness = 0
       for (let i = 0; i < frame.data.length; i += 4) {
-        let r = frame.data[i]
-        let g = frame.data[i + 1]
-        let b = frame.data[i + 2]
+        const r = frame.data[i]
+        const g = frame.data[i + 1]
+        const b = frame.data[i + 2]
         brightness += 0.299 * r + 0.587 * g + 0.114 * b
       }
-      brightness /= (frame.data.length / 4)
-      return brightness
+      return brightness / (frame.data.length / 4)
     }
 
     function updateDebug() {
       debug.innerText =
-        `lastBrightness: ${Math.floor(lastBrightness ?? 0)}\n` +
-        `brightnessDiff: ${Math.floor(brightnessDiff)}\n` +
-        `intervals: [${intervals.map(n => Math.floor(n)).join(', ')}]\n` +
-        `brightnessHistory len: ${brightnessHistory.length}\n` +
-        `ticks: ${ticks}\n` +
-        `last rpm: ${lastRpm}`
+        "lastBright " + Math.floor(lastBrightness || 0) + "\n" +
+        "brightDiff " + Math.floor(brightnessDiff) + "\n" +
+        "intervals [" + intervals.map(n => Math.floor(n)).join(",") + "]\n" +
+        "histLen " + brightnessHistory.length + "\n" +
+        "ticks " + ticks + "\n" +
+        "lastRpm " + lastRpm
     }
 
     function analyzeFrame() {
       if (!vid.videoWidth) return
-
       ctx.drawImage(vid, 0, 0, canv.width, canv.height)
-      let brightness = getCenterZoneBrightness()
-      let now = performance.now()
-
+      const brightness = getCenterZoneBrightness()
+      const now = performance.now()
       brightnessHistory.push(brightness)
       if (brightnessHistory.length > 128) brightnessHistory.shift()
-
       if (lastBrightness !== null) {
         brightnessDiff = Math.abs(brightness - lastBrightness)
         if (brightnessDiff > 30) {
           ticks++
           if (lastTime !== null) {
-            let interval = now - lastTime
+            const interval = now - lastTime
             intervals.push(interval)
             if (intervals.length > 10) intervals.shift()
-
-            let avg = intervals.reduce((a, b) => a + b) / intervals.length
+            const avg = intervals.reduce((a, b) => a + b) / intervals.length
             let rpm = Math.floor(60000 / avg)
             rpm = smoothRpm(rpm)
             lastRpm = rpm
-
-            readout.innerText = rpm + ' rpm from ticks nya~'
+            readout.innerText = rpm + " rpm from ticks nya~"
           }
           lastTime = now
         }
       }
-
       lastBrightness = brightness
-
       analyzeFreqEstimate()
       updateDebug()
     }
@@ -190,21 +173,16 @@
       if (brightnessHistory.length < 64) return
       let peaks = 0
       for (let i = 1; i < brightnessHistory.length - 1; i++) {
-        if (
-          brightnessHistory[i] > brightnessHistory[i - 1] &&
-          brightnessHistory[i] > brightnessHistory[i + 1]
-        ) {
+        if (brightnessHistory[i] > brightnessHistory[i - 1] && brightnessHistory[i] > brightnessHistory[i + 1]) {
           peaks++
         }
       }
-
-      let freqGuess = (peaks / (brightnessHistory.length * 50)) * 1000
+      const freqGuess = (peaks / (brightnessHistory.length * 50)) * 1000
       let rpm = Math.floor(freqGuess * 60)
-
       if (rpm > 2000) {
         rpm = smoothRpm(rpm)
         lastRpm = rpm
-        readout.innerText = rpm + ' estimated rpm from blur freq nya~'
+        readout.innerText = rpm + " est rpm from blur nya~"
       }
     }
 
@@ -214,14 +192,16 @@
       return Math.floor(rpmBuffer.reduce((a, b) => a + b) / rpmBuffer.length)
     }
 
-    function startAnalyzing() {
+    startBtn.addEventListener("click", async () => {
       if (analyzerRunning) return
+      const ok = await getCamera()
+      if (!ok) return
       analyzerRunning = true
+      readout.innerText = "scanning motion nya~"
       setInterval(analyzeFrame, 50)
-      readout.innerText = 'scanning motion nya~'
-    }
+    })
 
-    getCamera(true)
+    retryBtn.addEventListener("click", () => getCamera())
   </script>
 </body>
 </html>
