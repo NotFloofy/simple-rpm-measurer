@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>advanced rpm guesser nya~</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0a0a10;
+      color: #99ccff;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #videoWrapper {
+      position: relative;
+    }
+
+    video {
+      border-radius: 12px;
+      max-width: 100vw;
+      max-height: 70vh;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      background: #66ccff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10;
+    }
+
+    #rpmReadout {
+      margin-top: 10px;
+      font-size: 18px;
+      color: #66ccff;
+    }
+
+    button {
+      background: #1e90ff;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      margin-top: 10px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    button:hover {
+      background: #3399ff;
+    }
+  </style>
+</head>
+<body>
+  <div id="videoWrapper">
+    <video id="vid" autoplay muted></video>
+    <canvas id="canv"></canvas>
+    <div class="crosshair"></div>
+  </div>
+  <div id="rpmReadout">waiting for motion nya~</div>
+  <button onclick="startAnalyzing()">start rpm thingy</button>
+
+  <script>
+    const vid = document.getElementById('vid')
+    const canv = document.getElementById('canv')
+    const ctx = canv.getContext('2d')
+    const readout = document.getElementById('rpmReadout')
+
+    let lastBrightness = null
+    let lastTime = null
+    let intervals = []
+    let brightnessHistory = []
+    let rpmBuffer = []
+    let analyzerRunning = false
+
+    async function getCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        vid.srcObject = stream
+        vid.onloadedmetadata = () => {
+          canv.width = vid.videoWidth
+          canv.height = vid.videoHeight
+        }
+      } catch (e) {
+        alert('couldnt get camera access meow check permissions nya~')
+        console.error(e)
+      }
+    }
+
+    function getCenterZoneBrightness(size = 5) {
+      let x = Math.floor(canv.width / 2 - size / 2)
+      let y = Math.floor(canv.height / 2 - size / 2)
+      let frame = ctx.getImageData(x, y, size, size)
+      let brightness = 0
+      for (let i = 0; i < frame.data.length; i += 4) {
+        let r = frame.data[i]
+        let g = frame.data[i + 1]
+        let b = frame.data[i + 2]
+        brightness += 0.299 * r + 0.587 * g + 0.114 * b
+      }
+      brightness /= (frame.data.length / 4)
+      return brightness
+    }
+
+    function analyzeFrame() {
+      if (!vid.videoWidth) return
+
+      ctx.drawImage(vid, 0, 0, canv.width, canv.height)
+      let brightness = getCenterZoneBrightness()
+      let now = performance.now()
+
+      brightnessHistory.push(brightness)
+      if (brightnessHistory.length > 128) brightnessHistory.shift()
+
+      if (lastBrightness !== null) {
+        let diff = Math.abs(brightness - lastBrightness)
+        if (diff > 30) {
+          if (lastTime !== null) {
+            let interval = now - lastTime
+            intervals.push(interval)
+            if (intervals.length > 10) intervals.shift()
+
+            let avg = intervals.reduce((a, b) => a + b) / intervals.length
+            let rpm = Math.floor(60000 / avg)
+            rpm = smoothRpm(rpm)
+
+            readout.innerText = rpm + ' rpm nya~'
+          }
+          lastTime = now
+        }
+      }
+
+      lastBrightness = brightness
+
+      analyzeFreqEstimate()
+    }
+
+    function analyzeFreqEstimate() {
+      if (brightnessHistory.length < 64) return
+      let peaks = 0
+      for (let i = 1; i < brightnessHistory.length - 1; i++) {
+        if (
+          brightnessHistory[i] > brightnessHistory[i - 1] &&
+          brightnessHistory[i] > brightnessHistory[i + 1]
+        ) {
+          peaks++
+        }
+      }
+
+      let freqGuess = (peaks / (brightnessHistory.length * 50)) * 1000
+      let rpm = Math.floor(freqGuess * 60)
+
+      if (rpm > 2000) {
+        rpm = smoothRpm(rpm)
+        readout.innerText = rpm + ' estimated rpm from blur freq nya~'
+      }
+    }
+
+    function smoothRpm(rpm) {
+      rpmBuffer.push(rpm)
+      if (rpmBuffer.length > 10) rpmBuffer.shift()
+      return Math.floor(rpmBuffer.reduce((a, b) => a + b) / rpmBuffer.length)
+    }
+
+    function startAnalyzing() {
+      if (analyzerRunning) return
+      analyzerRunning = true
+      setInterval(analyzeFrame, 50)
+    }
+
+    getCamera()
+  </script>
+</body>
+</html>
