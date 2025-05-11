@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>advanced rpm guesser nya~</title>
+  <title>real rpm scanner nya~</title>
   <style>
     body {
       margin: 0;
@@ -13,19 +13,18 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      height: 100vh;
-      overflow: hidden;
+      padding: 10px;
     }
 
     #videoWrapper {
       position: relative;
+      margin-top: 10px;
     }
 
     video {
       border-radius: 12px;
       max-width: 100vw;
-      max-height: 70vh;
+      max-height: 60vh;
     }
 
     canvas {
@@ -47,9 +46,22 @@
     }
 
     #rpmReadout {
-      margin-top: 10px;
-      font-size: 18px;
+      font-size: 20px;
       color: #66ccff;
+      margin: 10px;
+    }
+
+    #debug {
+      background: #111122;
+      color: #99ccff;
+      font-size: 12px;
+      padding: 10px;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 500px;
+      white-space: pre-wrap;
+      overflow-y: auto;
+      max-height: 200px;
     }
 
     button {
@@ -59,7 +71,7 @@
       border: none;
       border-radius: 8px;
       font-size: 16px;
-      margin-top: 10px;
+      margin: 10px;
       cursor: pointer;
       transition: background 0.3s ease;
     }
@@ -70,19 +82,22 @@
   </style>
 </head>
 <body>
+  <div id="rpmReadout">waiting for cam nya~</div>
   <div id="videoWrapper">
-    <video id="vid" autoplay muted></video>
+    <video id="vid" autoplay muted playsinline></video>
     <canvas id="canv"></canvas>
     <div class="crosshair"></div>
   </div>
-  <div id="rpmReadout">waiting for motion nya~</div>
-  <button onclick="startAnalyzing()">start rpm thingy</button>
+  <button onclick="startAnalyzing()">start scan</button>
+  <button onclick="getCamera(true)">retry camera</button>
+  <div id="debug">debug info will show here nya~</div>
 
   <script>
     const vid = document.getElementById('vid')
     const canv = document.getElementById('canv')
     const ctx = canv.getContext('2d')
     const readout = document.getElementById('rpmReadout')
+    const debug = document.getElementById('debug')
 
     let lastBrightness = null
     let lastTime = null
@@ -90,18 +105,23 @@
     let brightnessHistory = []
     let rpmBuffer = []
     let analyzerRunning = false
+    let brightnessDiff = 0
+    let ticks = 0
+    let lastRpm = 0
 
-    async function getCamera() {
+    async function getCamera(forcePrompt = false) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
         vid.srcObject = stream
         vid.onloadedmetadata = () => {
           canv.width = vid.videoWidth
           canv.height = vid.videoHeight
+          readout.innerText = 'camera ready nya~'
         }
       } catch (e) {
-        alert('couldnt get camera access meow check permissions nya~')
+        if (forcePrompt) alert('click allow cam access nya~ or check browser settings')
         console.error(e)
+        readout.innerText = 'failed to get camera nya~'
       }
     }
 
@@ -120,6 +140,16 @@
       return brightness
     }
 
+    function updateDebug() {
+      debug.innerText =
+        `lastBrightness: ${Math.floor(lastBrightness ?? 0)}\n` +
+        `brightnessDiff: ${Math.floor(brightnessDiff)}\n` +
+        `intervals: [${intervals.map(n => Math.floor(n)).join(', ')}]\n` +
+        `brightnessHistory len: ${brightnessHistory.length}\n` +
+        `ticks: ${ticks}\n` +
+        `last rpm: ${lastRpm}`
+    }
+
     function analyzeFrame() {
       if (!vid.videoWidth) return
 
@@ -131,8 +161,9 @@
       if (brightnessHistory.length > 128) brightnessHistory.shift()
 
       if (lastBrightness !== null) {
-        let diff = Math.abs(brightness - lastBrightness)
-        if (diff > 30) {
+        brightnessDiff = Math.abs(brightness - lastBrightness)
+        if (brightnessDiff > 30) {
+          ticks++
           if (lastTime !== null) {
             let interval = now - lastTime
             intervals.push(interval)
@@ -141,8 +172,9 @@
             let avg = intervals.reduce((a, b) => a + b) / intervals.length
             let rpm = Math.floor(60000 / avg)
             rpm = smoothRpm(rpm)
+            lastRpm = rpm
 
-            readout.innerText = rpm + ' rpm nya~'
+            readout.innerText = rpm + ' rpm from ticks nya~'
           }
           lastTime = now
         }
@@ -151,6 +183,7 @@
       lastBrightness = brightness
 
       analyzeFreqEstimate()
+      updateDebug()
     }
 
     function analyzeFreqEstimate() {
@@ -170,6 +203,7 @@
 
       if (rpm > 2000) {
         rpm = smoothRpm(rpm)
+        lastRpm = rpm
         readout.innerText = rpm + ' estimated rpm from blur freq nya~'
       }
     }
@@ -184,9 +218,10 @@
       if (analyzerRunning) return
       analyzerRunning = true
       setInterval(analyzeFrame, 50)
+      readout.innerText = 'scanning motion nya~'
     }
 
-    getCamera()
+    getCamera(true)
   </script>
 </body>
 </html>
